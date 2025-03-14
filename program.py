@@ -69,8 +69,10 @@ async def mcsrv_update():
     async with command_lock:
         channel = bot.get_channel(settings["channel-id"])
         mc_manager.update(mcsrv)
-        status = mc_manager.get_status(mcsrv)
-        print(f"status: {status}")
+        newstatus = mc_manager.get_status(mcsrv)
+        if status != newstatus:
+            print(f"status: {status}")
+        status = newstatus
         while True:
             player, msg = mc_manager.try_pop_chat(mcsrv)
             if player and msg:
