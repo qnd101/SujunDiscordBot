@@ -1,0 +1,10 @@
+settings:
+  token: "discord bot token"
+  channel-id: "channel id"
+  mc-manage:
+    server-path: "server domain:port"
+    update-period: 1
+    pause-time: 10
+    cool-time: 60
+    start-script-path: "./startup.sh"
+    backup-script-path: "./backup.sh"
