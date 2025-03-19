@@ -4,11 +4,14 @@ import asyncio
 import yaml
 import mc_manager
 import time
+import gyuhwasays
+from PIL import Image, ImageDraw, ImageFont
+from io import BytesIO
 
 # Intents setup (optional, if you need to access certain features like member events)
 intents = discord.Intents.default()
 intents.message_content = True
-# Bot prefix setup
+# Bot prefix setupW
 bot = discord.Client(intents=intents)
 
 
@@ -43,14 +46,38 @@ status = ""
 
 command_lock = asyncio.Lock() #I need to execute commands synchronously...
 
+font = ImageFont.truetype("./NotoSansKR-Regular.ttf" or "arial.ttf", 20)
+img = Image.open("gyuwha_500.jpg")
+
 @bot.event
 async def on_message(message : discord.Message):
     # Skip if the message is from the bot itself to avoid infinite loops
     async with command_lock:
         global mcsrv, prefix_map, global_state
-        if message.channel.id != settings["channel-id"] or message.author == bot.user:
+        if message.content.startswith("/규화") and len(message.content) > 4:
+            text = message.content[4:]
+            try:
+                result = gyuhwasays.gyuwhasays(text, font, img, (250, 0))
+                result.show()
+                with BytesIO() as image_binary:
+                    result.save(image_binary, 'PNG')
+                    image_binary.seek(0)
+                    image_file = discord.File(fp=image_binary, filename='pil_image.png')
+
+                # Create an embed
+                embed = discord.Embed(title="", description="")
+                embed.set_image(url="attachment://pil_image.png")  # Important: Use attachment://
+
+                # Send the embed and the file
+                await message.reply(file=image_file, embed=embed)
+            except:
+                pass
             return
+            
         content_split = message.content.split()
+        
+        if message.channel.id != mc_settings["channel-id"] or message.author == bot.user:
+            return
         if content_split[0] != "/마크":
             return
         if len(content_split) == 1:
@@ -67,7 +94,7 @@ async def on_message(message : discord.Message):
 async def mcsrv_update():
     global mcsrv, status
     async with command_lock:
-        channel = bot.get_channel(settings["channel-id"])
+        channel = bot.get_channel(mc_settings["channel-id"])
         mc_manager.update(mcsrv)
         newstatus = mc_manager.get_status(mcsrv)
         if status != newstatus:
