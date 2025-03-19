@@ -7,6 +7,8 @@ import time
 import gyuhwasays
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
+from os.path import join
+import random
 
 # Intents setup (optional, if you need to access certain features like member events)
 intents = discord.Intents.default()
@@ -47,32 +49,41 @@ status = ""
 command_lock = asyncio.Lock() #I need to execute commands synchronously...
 
 font = ImageFont.truetype("./NotoSansKR-Regular.ttf" or "arial.ttf", 20)
-img = Image.open("gyuwha_500.jpg")
+
+with open('gyuhwasays.yml', 'r') as file:
+    gs_settings = yaml.safe_load(file)["settings"]
+gs_dir = gs_settings["imgdir"]
+gs_commands = gs_settings["commands"]
+for cmd_data in gs_commands:
+    for data in cmd_data["data"]:
+        data["img"] = Image.open(join(gs_dir, data["file"]))
 
 @bot.event
 async def on_message(message : discord.Message):
     # Skip if the message is from the bot itself to avoid infinite loops
     async with command_lock:
         global mcsrv, prefix_map, global_state
-        if message.content.startswith("/규화") and len(message.content) > 4:
-            text = message.content[4:]
-            try:
-                result = gyuhwasays.gyuwhasays(text, font, img, (250, 0))
-                result.show()
-                with BytesIO() as image_binary:
-                    result.save(image_binary, 'PNG')
-                    image_binary.seek(0)
-                    image_file = discord.File(fp=image_binary, filename='pil_image.png')
+        for cmd_data in gs_commands:
+            if message.content.startswith(cmd_data["cmd"]) and len(message.content) > len(cmd_data["cmd"]):
+                text = message.content[len(cmd_data["cmd"]):]
+                choices = len(cmd_data["data"])
+                chosen = cmd_data["data"][random.randint(0, choices-1)]
+                try:
+                    result = gyuhwasays.gyuwhasays(text, font, chosen["img"], (chosen["x"], chosen["y"]))
+                    with BytesIO() as image_binary:
+                        result.save(image_binary, 'PNG')
+                        image_binary.seek(0)
+                        image_file = discord.File(fp=image_binary, filename='pil_image.png')
 
-                # Create an embed
-                embed = discord.Embed(title="", description="")
-                embed.set_image(url="attachment://pil_image.png")  # Important: Use attachment://
+                    # Create an embed
+                    embed = discord.Embed(title="", description="")
+                    embed.set_image(url="attachment://pil_image.png")  # Important: Use attachment://
 
-                # Send the embed and the file
-                await message.reply(file=image_file, embed=embed)
-            except:
-                pass
-            return
+                    # Send the embed and the file
+                    await message.reply(file=image_file, embed=embed)
+                except:
+                    pass
+                return
             
         content_split = message.content.split()
         

@@ -1,0 +1,20 @@
+settings:
+  imgdir : "./gyuhwasays_images"
+  commands:
+    - cmd: "/규화"
+      data:
+        - file: "gyuwha_500.jpg"
+          x: 250
+          y: 0
+        - file: "gyuhwa2_500.jpg"
+          x: 280
+          y: 120
+        
+    - cmd: "/엽"
+      data:
+        - file: "yeop1_500.jpg"
+          x: 300
+          y: 100
+        - file: "yeop2_500.jpg"
+          x: 350
+          y: 80
