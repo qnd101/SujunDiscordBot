@@ -43,7 +43,7 @@ for cmd_data in gs_commands:
     for data in cmd_data["data"]:
         data["img"] = Image.open(join(gs_dir, data["file"]))
 
-cmd_dict = cmd_reserved | {cmd_data["cmd"] : f"{len(cmd_data["data"])}개의 사진 중 하나를 무작위로 선정" for cmd_data in gs_commands} | {cmd_data["cmd"]+"[i]" : f"{len(cmd_data["data"])}개의 사진 중 i번째 사진을 선정" for cmd_data in gs_commands}
+cmd_dict = cmd_reserved | {cmd_data["cmd"] : f"{len(cmd_data['data'])}개의 사진 중 하나를 무작위로 선정" for cmd_data in gs_commands} | {cmd_data["cmd"]+"[i]" : f"{len(cmd_data['data'])}개의 사진 중 i번째 사진을 선정" for cmd_data in gs_commands}
 
 @bot.event
 async def on_message(message : discord.Message):
@@ -54,13 +54,11 @@ async def on_message(message : discord.Message):
             return
         command = content_split[0]
         
-        if message.channel.id != mc_settings["channel-id"] or message.author == bot.user:
-            return
-
-        
         match command:
             case "/마크":
                 global mcsrv, status
+                if message.channel.id != mc_settings["channel-id"] or message.author == bot.user:
+                    return
                 if len(content_split) == 1:
                     await message.reply(content=status)
                 elif content_split[1] == "켜":
