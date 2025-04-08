@@ -48,11 +48,11 @@ def gyuwhasays(text, font, baseimg: Image.Image, bubble_pos: tuple[int, int]):
 
     if bubble_x + bubble_width > baseimg.width:
         new_width = bubble_x + bubble_width
-        new_img = Image.new("RGBA", (new_width, baseimg.height), (0, 0, 0, 0))
+        new_img = Image.new("RGB", (new_width, baseimg.height), (0, 0, 0, 0))
         new_img.paste(baseimg, (0, 0))
         baseimg = new_img
     else:
-         baseimg = baseimg.convert("RGBA")
+         baseimg = baseimg.convert("RGB")
 
     baseimg.paste(bubble_img, (bubble_x, bubble_y), bubble_img)
 

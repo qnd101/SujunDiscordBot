@@ -25,24 +25,9 @@ mcsrv = mc_manager.new(mc_settings["pause-time"],
                       mc_settings["cool-time"],
                       mc_settings["start-script-path"],
                       mc_settings["backup-script-path"])
-help_msg = f"""
-# 사용법
-/마크 : 마인크래프트 서버의 상태를 알려줍니다. 
-*(OFF, LOADING, ON, PAUSED, SHUTDOWN, BACKUP) 중 하나입니다
-*서버 인원이 0명이 되면 ON -> PAUSED (서버의 틱이 매우 느리게 흘러감)
-*PAUSED 상태에서 {mc_settings["pause-time"]}분이 지나면 자동으로 PAUSED -> SHUTDOWN -> BACKUP -> OFF 의 과정이 진행됩니다.
 
-/마크 켜: 마인크래프트 서버를 켭니다
-*OFF -> LOADING -> ON 의 과정이 진행됩니다. 서버가 켜지는데는 최대 1분 정도 걸릴 수 있습니다.
-*꺼진지 {mc_settings["cool-time"]}분 이내에 서버를 켤 수 없습니다. 이 경우 에러코드 2가 출력됩니다.
-
-# 기능
-서버 내 플레이어의 입장/퇴장, 채팅 내용을 자동으로 채널 내에 로그합니다.
-서버가 꺼지면 바로 백업을 진행합니다. (최대 3개. 예전 백업은 소멸됨)
-
-# 기타
-서버의 주소는 {mc_settings["server-path"]}입니다. 
-"""
+cmd_reserved = {"/마크": "마인크래프트 서버에 관한 명령어입니다. /마크 켜: 서버를 켭니다",
+                "/명령어": "명령어 목록을 보여줍니다. /명령어 자세히: 명령어에 대한 자세한 설명을 보여줍니다"}
 
 status = ""
 
@@ -58,48 +43,68 @@ for cmd_data in gs_commands:
     for data in cmd_data["data"]:
         data["img"] = Image.open(join(gs_dir, data["file"]))
 
+cmd_dict = cmd_reserved | {cmd_data["cmd"] : f"{len(cmd_data["data"])}개의 사진 중 하나를 무작위로 선정" for cmd_data in gs_commands} | {cmd_data["cmd"]+"[i]" : f"{len(cmd_data["data"])}개의 사진 중 i번째 사진을 선정" for cmd_data in gs_commands}
+
 @bot.event
 async def on_message(message : discord.Message):
     # Skip if the message is from the bot itself to avoid infinite loops
     async with command_lock:
-        global mcsrv, prefix_map, global_state
-        for cmd_data in gs_commands:
-            if message.content.startswith(cmd_data["cmd"]) and len(message.content) > len(cmd_data["cmd"]):
-                text = message.content[len(cmd_data["cmd"]):]
-                choices = len(cmd_data["data"])
-                chosen = cmd_data["data"][random.randint(0, choices-1)]
-                try:
-                    result = gyuhwasays.gyuwhasays(text, font, chosen["img"], (chosen["x"], chosen["y"]))
-                    with BytesIO() as image_binary:
-                        result.save(image_binary, 'PNG')
-                        image_binary.seek(0)
-                        image_file = discord.File(fp=image_binary, filename='pil_image.png')
-
-                    # Create an embed
-                    embed = discord.Embed(title="", description="")
-                    embed.set_image(url="attachment://pil_image.png")  # Important: Use attachment://
-
-                    # Send the embed and the file
-                    await message.reply(file=image_file, embed=embed)
-                except:
-                    pass
-                return
-            
-        content_split = message.content.split()
+        content_split = message.content.split()        
+        if len(content_split) == 0:
+            return
+        command = content_split[0]
         
         if message.channel.id != mc_settings["channel-id"] or message.author == bot.user:
             return
-        if content_split[0] != "/마크":
-            return
-        if len(content_split) == 1:
-            await message.reply(content=status)
-            return
-        elif content_split[1] == "켜":
-            result = mc_manager.start(mcsrv)
-            await message.reply(content="서버 켜는중..." if result == 0 else f"서버를 켤 수 없음. 에러코드 {result}")
-            return
-        else:
-            await message.reply(content=help_msg)
+
+        
+        match command:
+            case "/마크":
+                global mcsrv, status
+                if len(content_split) == 1:
+                    await message.reply(content=status)
+                elif content_split[1] == "켜":
+                    result = mc_manager.start(mcsrv)
+                    await message.reply(content="서버 켜는중..." if result == 0 else f"서버를 켤 수 없음. 에러코드 {result}")
+            case "/명령어":
+                global cmd_dict
+                if len(content_split)>1 and content_split[1] == "자세히":
+                    await message.reply(content="\n".join([f"{k}: {v}" for k, v in cmd_dict.items()]))
+                else:
+                    await message.reply(content=" ".join(cmd_dict.keys()))
+            case default:
+                global gs_commands
+                cmd_data = next(filter(lambda x: command.startswith(x["cmd"]), gs_commands), None)
+                if cmd_data is None:
+                    # global help_msg
+                    # await message.reply(content=help_msg)
+                    return
+                choices = len(cmd_data["data"])
+                if len(command) == len(cmd_data["cmd"]):
+                    chosen = cmd_data["data"][random.randint(0, choices-1)]
+                else:
+                    num = command[len(cmd_data["cmd"]):]
+                    if num.isdigit() and int(num) <= choices:
+                        chosen = cmd_data["data"][int(num)-1]
+                    else:
+                        return
+                text = message.content[len(command):].strip()
+                try:
+                    result = gyuhwasays.gyuwhasays(text, font, chosen["img"], (chosen["x"], chosen["y"]))
+                    with BytesIO() as image_binary:
+                        result.save(image_binary, 'JPEG')
+                        image_binary.seek(0)
+                        image_file = discord.File(fp=image_binary, filename='pil_image.jpg')
+
+                    # Create an embed
+                    embed = discord.Embed(title="", description="")
+                    embed.set_image(url="attachment://pil_image.jpg")  # Important: Use attachment://
+
+                    # Send the embed and the file
+                    await message.reply(file=image_file, embed=embed)
+                finally:
+                    return
+                # if no command matched
 
 @tasks.loop(seconds=mc_settings["update-period"])
 async def mcsrv_update():
