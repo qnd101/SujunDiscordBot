@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 from os.path import join
 import random
+import subprocess
 
 # Intents setup (optional, if you need to access certain features like member events)
 intents = discord.Intents.default()
@@ -16,38 +17,51 @@ intents.message_content = True
 # Bot prefix setupW
 bot = discord.Client(intents=intents)
 
+gs_commands = None
 
-with open('bot_settings.yml', 'r') as file:
+with open('./bot_settings.yml', 'r') as file:
     settings = yaml.safe_load(file)["settings"]
 
 mc_settings = settings["mc-manage"]
-mcsrv = mc_manager.new(mc_settings["pause-time"], 
-                      mc_settings["cool-time"],
-                      mc_settings["start-script-path"],
-                      mc_settings["backup-script-path"])
+mc_loaded = False
+mc_status = ""
+mcsrv = None
 
 cmd_reserved = {"/마크": "마인크래프트 서버에 관한 명령어입니다. /마크 켜: 서버를 켭니다",
-                "/명령어": "명령어 목록을 보여줍니다. /명령어 자세히: 명령어에 대한 자세한 설명을 보여줍니다"}
-
-status = ""
+                "/명령어": "명령어 목록을 보여줍니다. /명령어 자세히: 명령어에 대한 자세한 설명을 보여줍니다",
+                "/재로딩": "명령어 목록을 갱신합니다. 관리자만 사용 가능합니다."}
+cmd_dict = cmd_reserved.copy()
 
 command_lock = asyncio.Lock() #I need to execute commands synchronously...
-
 font = ImageFont.truetype("./NotoSansKR-Regular.ttf" or "arial.ttf", 20)
 
-with open('gyuhwasays.yml', 'r') as file:
-    gs_settings = yaml.safe_load(file)["settings"]
-gs_dir = gs_settings["imgdir"]
-gs_commands = gs_settings["commands"]
-for cmd_data in gs_commands:
-    for data in cmd_data["data"]:
-        data["img"] = Image.open(join(gs_dir, data["file"]))
+def load_mc():
+    global mc_loaded, mcsrv
+    if mc_loaded:
+        return
+    mc_loaded = True
+    subprocess.run(["/bin/bash", mc_settings["load-script-path"]], capture_output=True, text=True)
+    mcsrv = mc_manager.new(mc_settings["pause-time"], 
+                    mc_settings["cool-time"],
+                    mc_settings["start-script-path"],
+                    mc_settings["backup-script-path"])
 
-cmd_dict = cmd_reserved | {cmd_data["cmd"] : f"{len(cmd_data['data'])}개의 사진 중 하나를 무작위로 선정" for cmd_data in gs_commands} | {cmd_data["cmd"]+"[i]" : f"{len(cmd_data['data'])}개의 사진 중 i번째 사진을 선정" for cmd_data in gs_commands}
+def load_gs_config():
+    global gs_commands, cmd_dict
+    with open(settings["gyuhwasays-config"], 'r') as file:
+        gs_settings = yaml.safe_load(file)["settings"]
+    gs_dir = gs_settings["imgdir"]
+    gs_commands = gs_settings["commands"]
+    for cmd_data in gs_commands:
+        for data in cmd_data["data"]:
+            data["img"] = Image.open(join(gs_dir, data["file"]))
+
+    cmd_dict = cmd_reserved | {cmd_data["cmd"] : f"{len(cmd_data['data'])}개의 사진 중 하나를 무작위로 선정" for cmd_data in gs_commands} | {cmd_data["cmd"]+"[i]" : f"{len(cmd_data['data'])}개의 사진 중 i번째 사진을 선정" for cmd_data in gs_commands}
+
+load_gs_config()
 
 @bot.event
 async def on_message(message : discord.Message):
-    # Skip if the message is from the bot itself to avoid infinite loops
     async with command_lock:
         content_split = message.content.split()        
         if len(content_split) == 0:
@@ -56,12 +70,19 @@ async def on_message(message : discord.Message):
         
         match command:
             case "/마크":
-                global mcsrv, status
+                global mcsrv, mc_status, settings, mc_settings
                 if message.channel.id != mc_settings["channel-id"] or message.author == bot.user:
                     return
                 if len(content_split) == 1:
-                    await message.reply(content=status)
+                    if not mc_loaded:
+                        await message.reply(content="데이터가 아직 로드되지 않았습니다. /마크 켜 명령어를 사용하면 서버를 로드한 후 켭니다.")
+                    else:
+                        await message.reply(content=mc_status)
                 elif content_split[1] == "켜":
+                    if not mc_loaded:
+                        await message.reply(content="먼저 데이터를 로드합니다. 잠시만 기다려주세요.")
+                        load_mc()
+                        await message.reply(content="데이터를 로드했습니다.")
                     result = mc_manager.start(mcsrv)
                     await message.reply(content="서버 켜는중..." if result == 0 else f"서버를 켤 수 없음. 에러코드 {result}")
             case "/명령어":
@@ -70,6 +91,12 @@ async def on_message(message : discord.Message):
                     await message.reply(content="\n".join([f"{k}: {v}" for k, v in cmd_dict.items()]))
                 else:
                     await message.reply(content=" ".join(cmd_dict.keys()))
+            case "/재로딩":
+                if message.author.id == settings["admin-id"]:
+                    load_gs_config()
+                    await message.reply(content="명령어 목록을 갱신했습니다.")
+                else:
+                    await message.reply(content="권한이 없습니다.")
             case default:
                 global gs_commands
                 cmd_data = next(filter(lambda x: command.startswith(x["cmd"]), gs_commands), None)
@@ -106,14 +133,16 @@ async def on_message(message : discord.Message):
 
 @tasks.loop(seconds=mc_settings["update-period"])
 async def mcsrv_update():
-    global mcsrv, status
+    global mcsrv, mc_status
     async with command_lock:
+        if not mc_loaded:
+            return
         channel = bot.get_channel(mc_settings["channel-id"])
         mc_manager.update(mcsrv)
         newstatus = mc_manager.get_status(mcsrv)
-        if status != newstatus:
-            print(f"status: {status}")
-        status = newstatus
+        if mc_status != newstatus:
+            print(f"status: {mc_status}")
+        mc_status = newstatus
         while True:
             player, msg = mc_manager.try_pop_chat(mcsrv)
             if player and msg:
