@@ -10,6 +10,9 @@ from io import BytesIO
 from os.path import join
 import random
 import subprocess
+import alchemy
+import csv
+import shutil
 
 # Intents setup (optional, if you need to access certain features like member events)
 intents = discord.Intents.default()
@@ -29,12 +32,29 @@ mcsrv = None
 
 cmd_reserved = {"/마크": "마인크래프트 서버에 관한 명령어입니다. /마크 켜: 서버를 켭니다",
                 "/명령어": "명령어 목록을 보여줍니다. /명령어 자세히: 명령어에 대한 자세한 설명을 보여줍니다",
-                "/재로딩": "명령어 목록을 갱신합니다. 관리자만 사용 가능합니다."}
+                "/재로딩": "명령어 목록을 갱신합니다. 관리자만 사용 가능합니다.",
+                "/조합": "두 아이템을 조합합니다. 조합한 적이 있는 아이템만 조합할 수 있습니다. 조합에 성공하면 수준이 올라갑니다.",
+                "/아이템": "조합한 적이 있는 아이템을 보여줍니다.",
+                "/크레딧": "현재 크레딧을 보여줍니다.",
+                "/랭킹": "크레딧의 랭킹을 보여줍니다.",}
 cmd_dict = cmd_reserved.copy()
 
 command_lock = asyncio.Lock() #I need to execute commands synchronously...
 font = ImageFont.truetype("./NotoSansKR-Regular.ttf" or "arial.ttf", 20)
 
+with open(settings["credits-path"], newline='', encoding='utf-8') as csvfile:
+    reader = csv.reader(csvfile)
+    credits = {int(row[0]):int(row[1]) for row in reader}
+
+alchemy_config = settings["alchemy-config"]
+alchemy_manager = alchemy.Alchemy(alchemy_config["items-path"], alchemy_config["recipes-path"])
+
+#dictionary of item name : userid
+shutil.copy(alchemy_config["founditems-path"], alchemy_config["founditems-backuppath"])
+with open(alchemy_config["founditems-path"], newline='', encoding='utf-8') as csvfile:
+    reader = csv.reader(csvfile)
+    alchemy_founditems = {row[0]:int(row[1]) for row in reader}
+    
 def load_mc():
     global mc_loaded, mcsrv
     if mc_loaded:
@@ -60,8 +80,16 @@ def load_gs_config():
 
 load_gs_config()
 
+def format_list(li, col_cnt = 5, spacing = 10):
+    return "\n".join("".join(s.ljust(spacing) for s in li[i:i+col_cnt]) for i in range(0, len(li), col_cnt) )
+
 @bot.event
 async def on_message(message : discord.Message):
+    global mcsrv, mc_status, settings, mc_settings
+    global cmd_dict
+    global gs_commands
+    global alchemy_config, alchemy_founditems, alchemy_manager, credits
+
     async with command_lock:
         content_split = message.content.split()        
         if len(content_split) == 0:
@@ -70,7 +98,6 @@ async def on_message(message : discord.Message):
         
         match command:
             case "/마크":
-                global mcsrv, mc_status, settings, mc_settings
                 if message.channel.id != mc_settings["channel-id"] or message.author == bot.user:
                     return
                 if len(content_split) == 1:
@@ -86,7 +113,6 @@ async def on_message(message : discord.Message):
                     result = mc_manager.start(mcsrv)
                     await message.reply(content="서버 켜는중..." if result == 0 else f"서버를 켤 수 없음. 에러코드 {result}")
             case "/명령어":
-                global cmd_dict
                 if len(content_split)>1 and content_split[1] == "자세히":
                     await message.reply(content="\n".join([f"{k}: {v}" for k, v in cmd_dict.items()]))
                 else:
@@ -97,8 +123,58 @@ async def on_message(message : discord.Message):
                     await message.reply(content="명령어 목록을 갱신했습니다.")
                 else:
                     await message.reply(content="권한이 없습니다.")
+            case "/조합":
+                if len(content_split) != 3:
+                    await message.reply(content="아이템 2개를 입력해주세요.")
+                    return
+                for ing in content_split[1:]:
+                    if not alchemy_manager.val_item(ing) or ing not in alchemy_founditems:
+                        await message.reply(content=f"'{ing}' 은(는) 존재하지 않거나 아직 획득하지 못한 아이템입니다.")
+                        return
+                result = alchemy_manager.combine(content_split[1], content_split[2])
+                if len(result) == 0:
+                    return
+                ing1_em = content_split[1]+alchemy_manager.get_emoji(content_split[1])
+                ing2_em = content_split[2]+alchemy_manager.get_emoji(content_split[2])
+                for found in result:
+                    found_em = found+alchemy_manager.get_emoji(found)
+                    
+                    if found in alchemy_founditems.keys():
+                        found_user = await bot.fetch_user(alchemy_founditems[found])
+                        msg = f"'{found_em}' 은(는) {found_user} 이(가) 먼저 찾았어요..."
+                        color = discord.Color.red()
+                        title = "조합 성공! 그러나..."
+                    else:
+                        gain = len(alchemy_founditems) // 20 + 1
+                        if message.author.id in credits.keys():
+                            credits[message.author.id] += gain
+                        else:
+                            credits[message.author.id] = gain
+                        msg = f"'{found_em}' 을(를) 조합했다! 현재 크레딧: {credits[message.author.id]} YEOP **[+ {gain} YEOP]**"
+                        with open(settings["credits-path"], "w", newline="") as f:
+                            for key, value in credits.items():
+                                f.write(f"{key}, {value}\n")
+
+                        alchemy_founditems[found] = message.author.id
+                        with open(alchemy_config["founditems-path"], "a") as f:
+                            f.write(f"{found}, {message.author.id}\n")
+                        color = discord.Color.green()
+                        title = "조합 성공!"
+                    embed = discord.Embed(title=title, description=f"{ing1_em} + {ing2_em} = {found_em}", color=color)
+                    await message.reply(embed=embed, content=msg)
+        
+            case "/아이템":
+                items = [item+alchemy_manager.get_emoji(item) for item in alchemy_founditems.keys()]
+                for i in range(0, len(items), 150):
+                    await message.reply(f"```\n{format_list(items[i:i+150], 6, 10)}\n```")
+
+            case "/크레딧":
+                cred = credits[message.author.id] if message.author.id in credits.keys() else 0
+                await message.reply(f"현재 크레딧: {cred} YEOP")
+            case "/랭킹":
+                ranklist = [str(s) for tup in sorted(credits.items(), key=lambda x: x[1], reverse=True) for s in ((await bot.fetch_user(tup[0])).name, tup[1])]
+                await message.reply(content="```\n" + format_list(ranklist, 2, 25) + "\n```")
             case default:
-                global gs_commands
                 cmd_data = next(filter(lambda x: command.startswith(x["cmd"]), gs_commands), None)
                 if cmd_data is None:
                     # global help_msg
