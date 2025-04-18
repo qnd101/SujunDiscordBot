@@ -34,7 +34,9 @@ cmd_reserved = {"/마크": "마인크래프트 서버에 관한 명령어입니�
                 "/명령어": "명령어 목록을 보여줍니다. /명령어 자세히: 명령어에 대한 자세한 설명을 보여줍니다",
                 "/재로딩": "명령어 목록을 갱신합니다. 관리자만 사용 가능합니다.",
                 "/조합": "두 아이템을 조합합니다. 조합한 적이 있는 아이템만 조합할 수 있습니다. 조합에 성공하면 수준이 올라갑니다.",
-                "/아이템": "조합한 적이 있는 아이템을 보여줍니다.",
+                "/조합법": "제작한 적 있는 아이템의 조합법을 보여줍니다.",
+                "/남은조합": "해당 아이템에 대해 몇개의 조합법이 남았는지 알려줍니다.",
+                "/아이템": "조합한 적이 있는 아이템을 보여줍니다. 더 이상 조합법이 없는 아이템은 표시하지 않습니다.",
                 "/크레딧": "현재 크레딧을 보여줍니다.",
                 "/랭킹": "크레딧의 랭킹을 보여줍니다.",}
 cmd_dict = cmd_reserved.copy()
@@ -54,7 +56,16 @@ shutil.copy(alchemy_config["founditems-path"], alchemy_config["founditems-backup
 with open(alchemy_config["founditems-path"], newline='', encoding='utf-8') as csvfile:
     reader = csv.reader(csvfile)
     alchemy_founditems = {row[0]:int(row[1]) for row in reader}
+
+def new_craftables(item):
+    global alchemy_manager, alchemy_founditems
+    return sum(1 for item in alchemy_manager.craftable_items(item)if item not in alchemy_founditems)
     
+#add a new column representing the number of new craftables
+for key in alchemy_founditems.keys():
+    craftables = alchemy_manager.craftable_items(key)
+    alchemy_founditems[key] = [alchemy_founditems[key], new_craftables(key)]
+
 def load_mc():
     global mc_loaded, mcsrv
     if mc_loaded:
@@ -128,7 +139,7 @@ async def on_message(message : discord.Message):
                     await message.reply(content="아이템 2개를 입력해주세요.")
                     return
                 for ing in content_split[1:]:
-                    if not alchemy_manager.val_item(ing) or ing not in alchemy_founditems:
+                    if not alchemy_manager.val_item(ing) or ing not in alchemy_founditems.keys():
                         await message.reply(content=f"'{ing}' 은(는) 존재하지 않거나 아직 획득하지 못한 아이템입니다.")
                         return
                 result = alchemy_manager.combine(content_split[1], content_split[2])
@@ -140,13 +151,13 @@ async def on_message(message : discord.Message):
                     found_em = found+alchemy_manager.get_emoji(found)
                     
                     if found in alchemy_founditems.keys():
-                        found_user = await bot.fetch_user(alchemy_founditems[found])
+                        found_user = await bot.fetch_user(alchemy_founditems[found][0])
                         msg = f"'{found_em}' 은(는) {found_user} 이(가) 먼저 찾았어요..."
                         color = discord.Color.red()
                         title = "조합 성공! 그러나..."
                     else:
                         gain = len(alchemy_founditems) // 20 + 1
-                        if message.author.id in credits.keys():
+                        if message.author.id in credits:
                             credits[message.author.id] += gain
                         else:
                             credits[message.author.id] = gain
@@ -154,26 +165,55 @@ async def on_message(message : discord.Message):
                         with open(settings["credits-path"], "w", newline="") as f:
                             for key, value in credits.items():
                                 f.write(f"{key}, {value}\n")
+                        
+                        alchemy_founditems[found] = [message.author.id, new_craftables(found)]
+                        alchemy_founditems[content_split[1]][1] -= 1
+                        if content_split[1] != content_split[2]:
+                            alchemy_founditems[content_split[2]][1] -= 1
 
-                        alchemy_founditems[found] = message.author.id
                         with open(alchemy_config["founditems-path"], "a") as f:
                             f.write(f"{found}, {message.author.id}\n")
                         color = discord.Color.green()
                         title = "조합 성공!"
                     embed = discord.Embed(title=title, description=f"{ing1_em} + {ing2_em} = {found_em}", color=color)
                     await message.reply(embed=embed, content=msg)
-        
+
+            case "/남은조합":
+                if len(content_split) != 2:
+                    await message.reply(content="아이템 1개를 입력해주세요.")
+                    return
+                item = content_split[1]
+                if not alchemy_manager.val_item(item) or item not in alchemy_founditems:
+                    await message.reply(content=f"'{item}' 은(는) 존재하지 않거나 아직 획득하지 못한 아이템입니다.")
+                    return
+                leftnew = alchemy_founditems[item][1]
+                totalcrafts = alchemy_manager.craftable_items(item)
+                await message.reply(content=f"{item+alchemy_manager.get_emoji(item)}으로 제작할 수 있는 아이템 {len(totalcrafts)}개 중 {leftnew}개 남았습니다.")
+                
             case "/아이템":
-                items = [item+alchemy_manager.get_emoji(item) for item in alchemy_founditems.keys()]
+                items = [key+alchemy_manager.get_emoji(key) for key, val in alchemy_founditems.items() if val[1] > 0 ]
                 for i in range(0, len(items), 150):
                     await message.reply(f"```\n{format_list(items[i:i+150], 6, 10)}\n```")
+                await message.reply(f"총 {len(alchemy_manager.items)}개의 아이템 중 {len(alchemy_founditems)}개를 찾았습니다. 이 중 조합법이 남은 아이템들만 표시했습니다.")
 
             case "/크레딧":
-                cred = credits[message.author.id] if message.author.id in credits.keys() else 0
+                cred = credits[message.author.id] if message.author.id in credits else 0
                 await message.reply(f"현재 크레딧: {cred} YEOP")
             case "/랭킹":
                 ranklist = [str(s) for tup in sorted(credits.items(), key=lambda x: x[1], reverse=True) for s in ((await bot.fetch_user(tup[0])).name, tup[1])]
                 await message.reply(content="```\n" + format_list(ranklist, 2, 25) + "\n```")
+
+            case "/조합법":
+                if len(content_split) != 2:
+                    await message.reply(content="아이템 1개를 입력해주세요.")
+                    return
+                item = content_split[1]
+                if not alchemy_manager.val_item(item) or item not in alchemy_founditems:
+                    await message.reply(content=f"'{item}' 은(는) 존재하지 않거나 아직 획득하지 못한 아이템입니다.")
+                    return
+                recipe = alchemy_manager.get_recipes(item)
+                recipe_text = " , ".join(f"{i1+alchemy_manager.get_emoji(i1)} + {i2+alchemy_manager.get_emoji(i2)}" for i1, i2 in recipe if i1 in alchemy_founditems and i2 in alchemy_founditems)
+                await message.reply(content=f"'지금까지 알려진 {item+alchemy_manager.get_emoji(item)}' 의 조합법: \n{recipe_text}")
             case default:
                 cmd_data = next(filter(lambda x: command.startswith(x["cmd"]), gs_commands), None)
                 if cmd_data is None:

@@ -17,3 +17,10 @@ class Alchemy:
         if len(result) == 0:
             return []
         return result[0].split('/')
+    
+    def get_recipes(self, item):
+        recipes = self.recipies[self.recipies["result"].map(lambda x: item in x.split('/'))]
+        return [tuple(r) for r in recipes[['ing1', 'ing2']].values]
+    
+    def craftable_items(self, item):
+        return self.recipies['result'][(self.recipies['ing1'] == item) | (self.recipies['ing2'] == item)].to_list()
