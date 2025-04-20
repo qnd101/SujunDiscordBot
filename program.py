@@ -55,16 +55,16 @@ alchemy_manager = alchemy.Alchemy(alchemy_config["items-path"], alchemy_config["
 shutil.copy(alchemy_config["founditems-path"], alchemy_config["founditems-backuppath"])
 with open(alchemy_config["founditems-path"], newline='', encoding='utf-8') as csvfile:
     reader = csv.reader(csvfile)
-    alchemy_founditems = {row[0]:int(row[1]) for row in reader}
+    alchemy_founditems = {row[0]: [int(row[1]), 0] for row in reader}
 
 def new_craftables(item):
     global alchemy_manager, alchemy_founditems
-    return sum(1 for item in alchemy_manager.craftable_items(item)if item not in alchemy_founditems)
+    return sum(1 for item in alchemy_manager.craftable_items(item) if item not in alchemy_founditems)
     
 #add a new column representing the number of new craftables
 for key in alchemy_founditems.keys():
     craftables = alchemy_manager.craftable_items(key)
-    alchemy_founditems[key] = [alchemy_founditems[key], new_craftables(key)]
+    alchemy_founditems[key] = [alchemy_founditems[key][0], new_craftables(key)]
 
 def load_mc():
     global mc_loaded, mcsrv
@@ -167,9 +167,9 @@ async def on_message(message : discord.Message):
                                 f.write(f"{key}, {value}\n")
                         
                         alchemy_founditems[found] = [message.author.id, new_craftables(found)]
-                        alchemy_founditems[content_split[1]][1] -= 1
-                        if content_split[1] != content_split[2]:
-                            alchemy_founditems[content_split[2]][1] -= 1
+                        for ing in alchemy_manager.get_possible_ings(found):
+                            if ing in alchemy_founditems:
+                                alchemy_founditems[ing][1] -= 1                       
 
                         with open(alchemy_config["founditems-path"], "a") as f:
                             f.write(f"{found}, {message.author.id}\n")
@@ -200,7 +200,9 @@ async def on_message(message : discord.Message):
                 cred = credits[message.author.id] if message.author.id in credits else 0
                 await message.reply(f"현재 크레딧: {cred} YEOP")
             case "/랭킹":
-                ranklist = [str(s) for tup in sorted(credits.items(), key=lambda x: x[1], reverse=True) for s in ((await bot.fetch_user(tup[0])).name, tup[1])]
+                sortedlist = sorted(credits.items(), key=lambda x: x[1], reverse=True) 
+                users = await asyncio.gather(*[bot.fetch_user(tup[0]) for tup in sortedlist])
+                ranklist = [s for i in range(len(sortedlist)) for s in (users[i].name, str(sortedlist[i][1]))]
                 await message.reply(content="```\n" + format_list(ranklist, 2, 25) + "\n```")
 
             case "/조합법":

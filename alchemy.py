@@ -2,8 +2,8 @@ import pandas as pd
 
 class Alchemy:
     def __init__(self, items_file, recipes_file):
-        self.items = pd.read_csv(items_file)
-        self.recipies = pd.read_csv(recipes_file)
+        self.items : pd.DataFrame = pd.read_csv(items_file)
+        self.recipies : pd.DataFrame = pd.read_csv(recipes_file)
 
     def val_item(self, item):
         return item in self.items['name'].values
@@ -17,6 +17,10 @@ class Alchemy:
         if len(result) == 0:
             return []
         return result[0].split('/')
+    
+    def get_possible_ings(self, item):
+        temp = self.recipies[self.recipies["result"] == item]
+        return pd.concat([temp["ing1"], temp["ing2"]], ignore_index=True).drop_duplicates().values
     
     def get_recipes(self, item):
         recipes = self.recipies[self.recipies["result"].map(lambda x: item in x.split('/'))]
