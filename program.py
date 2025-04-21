@@ -7,12 +7,15 @@ import time
 import gyuhwasays
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
-from os.path import join
+from os.path import join, basename, exists
 import random
 import subprocess
 import alchemy
 import csv
 import shutil
+import bothosting
+import os
+import re
 
 # Intents setup (optional, if you need to access certain features like member events)
 intents = discord.Intents.default()
@@ -38,7 +41,12 @@ cmd_reserved = {"/마크": "마인크래프트 서버에 관한 명령어입니�
                 "/남은조합": "해당 아이템에 대해 몇개의 조합법이 남았는지 알려줍니다.",
                 "/아이템": "조합한 적이 있는 아이템을 보여줍니다. 더 이상 조합법이 없는 아이템은 표시하지 않습니다.",
                 "/크레딧": "현재 크레딧을 보여줍니다.",
-                "/랭킹": "크레딧의 랭킹을 보여줍니다.",}
+                "/랭킹": "크레딧의 랭킹을 보여줍니다.",
+                "/업로드": "봇에 필요한 파일을 업로드 합니다.",
+                "/다운" : "파일을 다운 받습니다.",
+                "/파일" : "업로드한 파일들을 보여줍니다.",
+                "/삭제" : "업로드된 파일을 지웁니다.",
+                "/봇": "봇의 상태를 알려줍니다. /봇 켜: 봇을 켭니다. /봇 꺼: 봇을 끕니다."}
 cmd_dict = cmd_reserved.copy()
 
 command_lock = asyncio.Lock() #I need to execute commands synchronously...
@@ -50,6 +58,9 @@ with open(settings["credits-path"], newline='', encoding='utf-8') as csvfile:
 
 alchemy_config = settings["alchemy-config"]
 alchemy_manager = alchemy.Alchemy(alchemy_config["items-path"], alchemy_config["recipes-path"])
+
+hosting_config = settings["bot-hosting-config"]
+hosting_manager = bothosting.HostingManger(hosting_config["root-dir"], hosting_config["init-script"])
 
 #dictionary of item name : userid
 shutil.copy(alchemy_config["founditems-path"], alchemy_config["founditems-backuppath"])
@@ -94,12 +105,20 @@ load_gs_config()
 def format_list(li, col_cnt = 5, spacing = 10):
     return "\n".join("".join(s.ljust(spacing) for s in li[i:i+col_cnt]) for i in range(0, len(li), col_cnt) )
 
+def is_safe_filename(name):
+    if ".." in name or "/" in name or "\\" in name or "\x00" in name:
+        return False
+    if not re.match(r'^[\w.\-]+$', name):  # only allow a-z, A-Z, 0-9, _, -, .
+        return False
+    return True
+
 @bot.event
 async def on_message(message : discord.Message):
     global mcsrv, mc_status, settings, mc_settings
     global cmd_dict
     global gs_commands
     global alchemy_config, alchemy_founditems, alchemy_manager, credits
+    global hosting_config, hosting_manager
 
     async with command_lock:
         content_split = message.content.split()        
@@ -134,6 +153,85 @@ async def on_message(message : discord.Message):
                     await message.reply(content="명령어 목록을 갱신했습니다.")
                 else:
                     await message.reply(content="권한이 없습니다.")
+            case "/업로드":
+                if message.author.bot:
+                    await message.reply(content=f"인간도 아닌게 어딜!")
+                    return
+                if not hosting_manager.user_exists(message.author.id):
+                    await message.reply(content="아직 등록되지 않은 사용자입니다. 폴더를 생성하고 환경을 세팅합니다...")
+                    hosting_manager.init_user(message.author.id)
+                    await message.reply(content="등록 및 세팅이 완료되었습니다.")
+                else:
+                    hosting_manager.init_user(message.author.id) #do init anyways. (only creates user)
+
+                for attachment in message.attachments:
+                    if not is_safe_filename(attachment.filename):
+                        await message.reply(f"{attachment.filename} 파일 이름이 올바르지 않습니다.")
+                        continue
+                    filename = basename(attachment.filename) #sanitizing
+                    file_path = join(hosting_manager.user_dir(message.author.id), attachment.filename)
+                    await attachment.save(file_path)
+                    await message.channel.send(f"{attachment.filename} 업로드 완료!")
+            
+            case "/다운":
+                if not hosting_manager.user_exists(message.author.id):
+                    await message.reply("등록된 사용자가 아닙니다. 등록하려면 /업로드를 이용해주세요")
+                    return
+                if len(content_split) != 2:
+                    await message.reply("파일명 1개를 입력해주세요.")
+                    return
+                if not is_safe_filename(content_split[1]):
+                    await message.reply("파일 이름이 올바르지 않습니다.")
+                    return
+                filename = content_split[1]
+                fullpath = join(hosting_manager.user_dir(message.author.id), filename)
+                if not exists(fullpath):
+                    await message.reply("해당 파일이 존재하지 않습니다.")
+                else:
+                    await message.reply(content=f"{content_split[1]}을 찾았습니다.", file=discord.File(fullpath))
+            case "/삭제":
+                if not hosting_manager.user_exists(message.author.id):
+                    await message.reply("등록된 사용자가 아닙니다. 등록하려면 /업로드를 이용해주세요")
+                    return
+                if len(content_split) != 2:
+                    await message.reply("파일명 1개를 입력해주세요.")
+                    return
+                if not is_safe_filename(content_split[1]):
+                    await message.reply("파일 이름이 올바르지 않습니다.")
+                    return
+                fullpath = join(hosting_manager.user_dir(message.author.id), content_split[1])
+                os.remove(fullpath)
+
+            case "/봇":
+                if not hosting_manager.user_exists(message.author.id):
+                    await message.reply("등록된 사용자가 아닙니다. 등록하려면 /업로드를 이용해주세요")
+                    return
+                if len(content_split) == 1:
+                    is_on = hosting_manager.bot_isrunning(message.author.id)
+                    await message.reply(f"봇이 현재 {'켜져' if is_on else '꺼져'} 있습니다.")
+                    return
+                if content_split[1] == "켜":
+                    if hosting_manager.bot_isrunning(message.author.id):
+                        await message.reply("봇이 이미 켜져 있습니다.")
+                        return
+                    await message.reply("봇을 켰습니다.")
+                    hosting_manager.init_user(message.author.id)
+                    hosting_manager.bot_run(message.author.id)
+                elif content_split[1] == "꺼":
+                    if not hosting_manager.bot_isrunning(message.author.id):
+                        await message.reply("봇이 꺼져 있습니다.")
+                        return
+                    await message.reply("봇을 끄는 중입니다.")
+                    hosting_manager.bot_stop(message.author.id)
+                    await message.reply("봇을 껐습니다.")
+                
+            case "/파일":
+                if not hosting_manager.user_exists(message.author.id):
+                    await message.reply("등록된 사용자가 아닙니다. 등록하려면 /업로드를 이용해주세요")
+                    return
+                dirs, files = hosting_manager.get_subobjs(message.author.id)
+                await message.reply("```\n"+"\n".join(["📁 "+name for name in dirs]+["📄 "+name for name in files])+"\n```")
+            
             case "/조합":
                 if len(content_split) != 3:
                     await message.reply(content="아이템 2개를 입력해주세요.")
