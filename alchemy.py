@@ -32,7 +32,7 @@ class Alchemy:
             self.quest2 = random.sample(far, min(self.q2len, len(far)))
 
     def immediate_craftables(self):
-        temp= self.recipies['result'][self.recipies['ing1'].isin(self.founditems) | self.recipies['ing2'].isin(self.founditems)].str.split('/').explode().unique()
+        temp= self.recipies['result'][self.recipies['ing1'].isin(self.founditems) & self.recipies['ing2'].isin(self.founditems)].str.split('/').explode().unique()
         return [item for item in temp if item not in self.founditems]
 
     def faraway_craftables(self):
@@ -64,7 +64,7 @@ class Alchemy:
         return [tuple(r) for r in recipes[['ing1', 'ing2']].values]
     
     def craftable_items(self, item):
-        return self.recipies['result'][(self.recipies['ing1'] == item) | (self.recipies['ing2'] == item)].to_list()
+        return self.recipies['result'][(self.recipies['ing1'] == item) | (self.recipies['ing2'] == item)].str.split('/').explode().unique().tolist()
     
     def process_newitem(self, found, id):
         self.founditems[found] = id

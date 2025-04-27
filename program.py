@@ -235,7 +235,7 @@ async def on_message(message : discord.Message):
                     found_em = found+alchemy_manager.get_emoji(found)
                     
                     if found in alchemy_manager.founditems.keys():
-                        found_user = await bot.fetch_user(alchemy_manager.founditems[found][0])
+                        found_user = await bot.fetch_user(alchemy_manager.founditems[found])
                         msg = f"'{found_em}' 은(는) {found_user} 이(가) 먼저 찾았어요..."
                         color = discord.Color.red()
                         title = "조합 성공! 그러나..."
