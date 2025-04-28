@@ -32,11 +32,11 @@ class Alchemy:
             self.quest2 = random.sample(far, min(self.q2len, len(far)))
 
     def immediate_craftables(self):
-        temp= self.recipies['result'][self.recipies['ing1'].isin(self.founditems) & self.recipies['ing2'].isin(self.founditems)].str.split('/').explode().unique()
+        temp= self.recipies['result'][self.recipies['ing1'].isin(self.founditems) & self.recipies['ing2'].isin(self.founditems)].unique()
         return [item for item in temp if item not in self.founditems]
 
     def faraway_craftables(self):
-        temp = self.recipies['result'][self.recipies['ing1'].isin(self.founditems) | self.recipies['ing2'].isin(self.founditems)].str.split('/').explode().unique()
+        temp = self.recipies['result'][self.recipies['ing1'].isin(self.founditems) | self.recipies['ing2'].isin(self.founditems)].unique()
         return [item for item in self.items['name'].values if item not in temp and item not in self.baseitems]
 
     def craftable_cnt(self, item):
@@ -50,21 +50,17 @@ class Alchemy:
 
     def combine(self, ing1, ing2):
         result = self.recipies['result'][(self.recipies['ing1'] == ing1) & (self.recipies['ing2'] == ing2)].to_list()
-        result.extend(self.recipies['result'][(self.recipies['ing1'] == ing2) & (self.recipies['ing2'] == ing1)].to_list())
+        result.extend(self.recipies['result'][(self.recipies['ing1'] == ing2) & (self.recipies['ing2'] == ing1)].values)
         if len(result) == 0:
             return []
-        return result[0].split('/')
+        return result
     
     def get_possible_ings(self, item):
         temp = self.recipies[self.recipies["result"] == item]
         return pd.concat([temp["ing1"], temp["ing2"]], ignore_index=True).drop_duplicates().values
     
-    def get_recipes(self, item):
-        recipes = self.recipies[self.recipies["result"].map(lambda x: item in x.split('/'))]
-        return [tuple(r) for r in recipes[['ing1', 'ing2']].values]
-    
     def craftable_items(self, item):
-        return self.recipies['result'][(self.recipies['ing1'] == item) | (self.recipies['ing2'] == item)].str.split('/').explode().unique().tolist()
+        return self.recipies['result'][(self.recipies['ing1'] == item) | (self.recipies['ing2'] == item)].unique().tolist()
     
     def process_newitem(self, found, id):
         self.founditems[found] = id
@@ -92,5 +88,5 @@ class Alchemy:
                 self.quest2.append(random.choice(far))
 
     def known_recipes(self, item):
-        recipe = self.get_recipes(item)
-        return [(i1, i2) for (i1, i2) in recipe if i1 in self.founditems and i2 in self.founditems]
+        recipes = self.recipies[self.recipies["result"] == item]
+        return [(row.ing1, row.ing2) for row in recipes.itertuples() if row.ing1 in self.founditems and row.ing2 in self.founditems]

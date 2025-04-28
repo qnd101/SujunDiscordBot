@@ -312,6 +312,7 @@ async def on_message(message : discord.Message):
                     await message.reply(content=f"'{item}' 은(는) 존재하지 않거나 아직 획득하지 못한 아이템입니다.")
                     return
                 recipe = alchemy_manager.known_recipes(item)
+                print(recipe)
                 recipe_text = " , ".join(f"{i1+alchemy_manager.get_emoji(i1)} + {i2+alchemy_manager.get_emoji(i2)}" for i1, i2 in recipe)
                 await message.reply(content=f"'지금까지 알려진 {item+alchemy_manager.get_emoji(item)}' 의 조합법: \n{recipe_text}")
             case default:
