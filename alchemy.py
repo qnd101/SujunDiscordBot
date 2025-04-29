@@ -36,8 +36,8 @@ class Alchemy:
         return [item for item in temp if item not in self.founditems]
 
     def faraway_craftables(self):
-        temp = self.recipies['result'][self.recipies['ing1'].isin(self.founditems) & self.recipies['ing2'].isin(self.founditems)].unique()
-        return [item for item in self.items['name'].values if item not in temp and item not in self.baseitems]
+        temp = self.recipies['result'][(~self.recipies['ing1'].isin(self.founditems)) | ~(self.recipies['ing2'].isin(self.founditems))].unique()
+        return [item for item in temp if item not in self.baseitems]
 
     def craftable_cnt(self, item):
         return sum(1 for item in self.craftable_items(item) if item not in self.founditems)
