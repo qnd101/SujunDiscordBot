@@ -1,13 +1,14 @@
 import os
 import subprocess
 import time
+import pwd
 
 class HostingManger:
     def __init__(self, rootdir, initscriptpath):
         self.rootdir = os.path.abspath(rootdir)
         self.initscriptpath = initscriptpath
         self.procs = {}
-        self.proctimeout = 3
+        self.proctimeout = 5
 
     # add user for each folder under rootdir
     def initialize(self):
@@ -52,13 +53,19 @@ class HostingManger:
     def bot_stop(self, uid):
         if not self.bot_isrunning(uid):
             return
-        self.procs[uid].terminate()
+        pw_uid = pwd.getpwnam(str(uid)).pw_uid
+        self.procs[uid].terminate()  # Send Sigterm to the process
+        # self.procs[uid].wait() # Wait for the process to terminate
+        subprocess.run(["pkill", "-u", str(pw_uid)]) # Send Sigterm to child processes (exactly, all process owned by the user)
         start_time = time.time()
         while time.time() - start_time < self.proctimeout:
-            if self.procs[uid].poll() is not None:  # Check if the process is finished
+            if subprocess.run(['pgrep', '-u', str(pw_uid)]).returncode != 0:  # Check if any process of user is running
+                print(f"Bot of {uid} terminated gracefully.")
                 return
-            time.sleep(0.1) 
-        subprocess.run(["/bin/bash", "-c", f"pkill -u {uid}"]) # Kill all processes owned by the user
+            time.sleep(0.5) 
+        
+        subprocess.run(["pkill","-9", "-u", str(pw_uid)]) # Send Sigkill to all processes owned by the user
+        print(f"Bot of {uid} was killed after timeout.")
 
     def chown_item(self, uid, item):
         path = os.path.join(self.user_dir(uid), item)
