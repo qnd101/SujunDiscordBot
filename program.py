@@ -15,6 +15,7 @@ import bothosting
 import os
 import csv
 import re
+import shutil
 
 # Intents setup (optional, if you need to access certain features like member events)
 intents = discord.Intents.default()
@@ -43,6 +44,7 @@ cmd_reserved = {"/마크": "마인크래프트 서버에 관한 명령어입니�
                 "/랭킹": "크레딧의 랭킹을 보여줍니다.",
                 "/퀘스트": "조합 퀘스트를 보여줍니다.",
                 "/업로드": "봇에 필요한 파일을 업로드 합니다.",
+                "/업폴더": ".tar를 통해 폴더를 업로드 합니다.",
                 "/다운" : "파일을 다운 받습니다.",
                 "/파일" : "업로드한 파일들을 보여줍니다.",
                 "/삭제" : "업로드된 파일을 지웁니다.",
@@ -61,7 +63,7 @@ alchemy_manager = alchemy.Alchemy(alchemy_config["items-path"], alchemy_config["
 
 hosting_config = settings["bot-hosting-config"]
 hosting_manager = bothosting.HostingManger(hosting_config["root-dir"], hosting_config["init-script"])
-
+hosting_manager.initialize()
 
 def load_mc():
     global mc_loaded, mcsrv
@@ -147,18 +149,40 @@ async def on_message(message : discord.Message):
                     await message.reply(content="아직 등록되지 않은 사용자입니다. 폴더를 생성하고 환경을 세팅합니다...")
                     hosting_manager.init_user(message.author.id)
                     await message.reply(content="등록 및 세팅이 완료되었습니다.")
-                else:
-                    hosting_manager.init_user(message.author.id) #do init anyways. (only creates user)
 
                 for attachment in message.attachments:
                     if not is_safe_filename(attachment.filename):
                         await message.reply(f"{attachment.filename} 파일 이름이 올바르지 않습니다.")
                         continue
                     filename = basename(attachment.filename) #sanitizing
-                    file_path = join(hosting_manager.user_dir(message.author.id), attachment.filename)
+                    file_path = join(hosting_manager.user_dir(message.author.id), filename)
                     await attachment.save(file_path)
+                    hosting_manager.chown_item(message.author.id, filename)
                     await message.channel.send(f"{attachment.filename} 업로드 완료!")
             
+            case "/업폴더":
+                if not hosting_manager.user_exists(message.author.id):
+                    await message.reply("등록된 사용자가 아닙니다. 등록하려면 /업로드를 이용해주세요")
+                    return
+                
+                for attachment in message.attachments:
+                    if not is_safe_filename(attachment.filename):
+                        await message.reply(f"{attachment.filename} 파일 이름이 올바르지 않습니다.")
+                        continue
+                    filename = basename(attachment.filename) #sanitizing
+                    foldername, extension = os.path.splitext(filename)
+                    if extension != ".tar":
+                        await message.reply(".tar 아카이브 파일을 올려주세요.")
+                        return
+                    file_path = join(hosting_manager.user_dir(message.author.id), filename)
+                    folder_path = join(hosting_manager.user_dir(message.author.id), foldername)
+                    await attachment.save(file_path)
+                    os.makedirs(folder_path, exist_ok=True)
+                    subprocess.run(["tar", "-xvf", file_path, "-C", folder_path])
+                    os.remove(file_path)
+                    hosting_manager.chown_item(message.author.id, foldername)
+                    await message.channel.send(f"{foldername} 업로드 완료!")
+
             case "/다운":
                 if not hosting_manager.user_exists(message.author.id):
                     await message.reply("등록된 사용자가 아닙니다. 등록하려면 /업로드를 이용해주세요")
@@ -175,6 +199,7 @@ async def on_message(message : discord.Message):
                     await message.reply("해당 파일이 존재하지 않습니다.")
                 else:
                     await message.reply(content=f"{content_split[1]}을 찾았습니다.", file=discord.File(fullpath))
+
             case "/삭제":
                 if not hosting_manager.user_exists(message.author.id):
                     await message.reply("등록된 사용자가 아닙니다. 등록하려면 /업로드를 이용해주세요")
@@ -186,7 +211,15 @@ async def on_message(message : discord.Message):
                     await message.reply("파일 이름이 올바르지 않습니다.")
                     return
                 fullpath = join(hosting_manager.user_dir(message.author.id), content_split[1])
-                os.remove(fullpath)
+                if not exists(fullpath):
+                    await message.reply(f"{content_split[1]}이 존재하지 않습니다.")
+
+                if os.path.isdir(fullpath):
+                    shutil.rmtree(fullpath)
+                    await message.reply(f"{content_split[1]} 폴더를 삭제했습니다.")
+                else:
+                    os.remove(fullpath)
+                    await message.reply(f"{content_split[1]}를 삭제했습니다.")
 
             case "/봇":
                 if not hosting_manager.user_exists(message.author.id):
@@ -201,7 +234,6 @@ async def on_message(message : discord.Message):
                         await message.reply("봇이 이미 켜져 있습니다.")
                         return
                     await message.reply("봇을 켰습니다.")
-                    hosting_manager.init_user(message.author.id)
                     hosting_manager.bot_run(message.author.id)
                 elif content_split[1] == "꺼":
                     if not hosting_manager.bot_isrunning(message.author.id):

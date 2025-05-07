@@ -9,6 +9,13 @@ class HostingManger:
         self.procs = {}
         self.proctimeout = 3
 
+    # add user for each folder under rootdir
+    def initialize(self):
+        for entry in os.scandir(self.rootdir):
+            if entry.is_dir():
+                subprocess.run(["useradd", "-d", entry.path, entry.name])
+                subprocess.run(["chown", "-R", f"{entry.name}:{entry.name}", entry.path])
+
     def user_dir(self, uid) -> str:
         return os.path.join(self.rootdir, str(uid))
 
@@ -51,5 +58,15 @@ class HostingManger:
             if self.procs[uid].poll() is not None:  # Check if the process is finished
                 return
             time.sleep(0.1) 
-        self.procs[uid].kill()
-        self.procs[uid].wait()
+        subprocess.run(["/bin/bash", "-c", f"pkill -u {uid}"]) # Kill all processes owned by the user
+
+    def chown_item(self, uid, item):
+        path = os.path.join(self.user_dir(uid), item)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Path not found: {path}")
+        if os.path.isdir(path):
+            subprocess.run(["chown", "-R", f"{uid}:{uid}", path])
+            subprocess.run(["chmod", "-R", "770", path])
+        else:
+            subprocess.run(["chown", f"{uid}:{uid}", path])
+            subprocess.run(["chmod", "770", path])
