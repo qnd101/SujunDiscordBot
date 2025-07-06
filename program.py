@@ -16,6 +16,7 @@ import os
 import csv
 import re
 import shutil
+import facesoup
 
 # Intents setup (optional, if you need to access certain features like member events)
 intents = discord.Intents.default()
@@ -48,7 +49,8 @@ cmd_reserved = {"/마크": "마인크래프트 서버에 관한 명령어입니�
                 "/다운" : "파일을 다운 받습니다.",
                 "/파일" : "업로드한 파일들을 보여줍니다.",
                 "/삭제" : "업로드된 파일을 지웁니다.",
-                "/봇": "봇의 상태를 알려줍니다. /봇 켜: 봇을 켭니다. /봇 꺼: 봇을 끕니다."}
+                "/봇": "봇의 상태를 알려줍니다. /봇 켜: 봇을 켭니다. /봇 꺼: 봇을 끕니다.", 
+                "/요리하기" : "업로드한 얼굴사진을 요리해서 맛있는 탕으로 만들어줍니다."}
 cmd_dict = cmd_reserved.copy()
 
 command_lock = asyncio.Lock() #I need to execute commands synchronously...
@@ -347,6 +349,36 @@ async def on_message(message : discord.Message):
                 print(recipe)
                 recipe_text = " , ".join(f"{i1+alchemy_manager.get_emoji(i1)} + {i2+alchemy_manager.get_emoji(i2)}" for i1, i2 in recipe)
                 await message.reply(content=f"'지금까지 알려진 {item+alchemy_manager.get_emoji(item)}' 의 조합법: \n{recipe_text}")
+            case "/요리하기":
+                if message.author.bot:
+                    await message.reply(content="인간도 아닌게 어딜!")
+                    return
+                if len(message.attachments) == 0:
+                    await message.reply(content="얼굴 사진을 업로드해주세요.")
+                    return
+                attachment = message.attachments[0]
+                if not (attachment.content_type and attachment.content_type.startswith("image/")):
+                    await message.reply(content="이미지 파일을 업로드해주세요.")
+                    return
+                try:
+                    await message.reply(content="요리하는 중... 잠시만 기다려주세요")
+                    img = facesoup.load_image_from_buffer(await attachment.read())
+                    img = facesoup.resize_image(img, 1500)
+                    img = facesoup.find_face(img)
+                    img = facesoup.blend_soup(img)
+                    img_bytes = BytesIO(facesoup.encode_array_into_jpg(img))
+                    img_bytes.seek(0)
+                    image_file = discord.File(fp=img_bytes, filename='facesoup.jpg')
+                    # Create an embed
+                    embed = discord.Embed(title="", description="")
+                    embed.set_image(url="attachment://facesoup.jpg")  # Important: Use attachment://
+                    # Send the embed and the file
+                    await message.reply(content= "맛있는 탕🍲이 완성되었습니다!😋", file=image_file, embed=embed)
+                    return
+                except Exception as e:
+                    await message.reply(content=str(e))
+                    return
+
             case default:
                 cmd_data = next(filter(lambda x: command.startswith(x["cmd"]), gs_commands), None)
                 if cmd_data is None:
