@@ -54,6 +54,9 @@ mc_manager.MCSrvC_status_free.argtypes = [ctypes.POINTER(ctypes.c_char)]
 mc_manager.MCSrvC_try_pop_chat_free.restype = None
 mc_manager.MCSrvC_try_pop_chat_free.argtypes = [ctypes.POINTER(ChatDataC)]
 
+mc_manager.MCSrvC_extern_chat.restype = ctypes.c_int
+mc_manager.MCSrvC_extern_chat.argtypes = [MCSrvC, ctypes.POINTER(ctypes.c_char), ctypes.POINTER(ctypes.c_char)]
+
 mc_manager.MCSrvC_new_free.restype = None
 mc_manager.MCSrvC_new_free.argtypes = [MCSrvC]
 
@@ -109,6 +112,14 @@ def stop(mcsrv: MCSrvC):
             return True  # Success
         else:
             return False  # Failure
+    except Exception as e:
+        print(e)
+
+def extern_chat(mcsrv: MCSrvC, player: str, msg: str):
+    try:
+        if mc_manager.MCSrvC_extern_chat(mcsrv, player.encode('utf-8'), msg.encode('utf-8')) == 0:
+            return True
+        return False
     except Exception as e:
         print(e)
 

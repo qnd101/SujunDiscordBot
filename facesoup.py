@@ -11,6 +11,18 @@ soup = soup_total[soupcorner[1]:soupcorner[1]+soupsize[1], soupcorner[0]:soupcor
 mask = np.zeros((soupsize[1], soupsize[0]), dtype=np.float32)
 halfsz = (soupsize[0]//2, soupsize[1]//2)
 cv2.ellipse(mask, halfsz, halfsz, 0, 0, 360, 1, -1)  # Fill the ellipse with 1
+innerratio = 0.4
+innermask = np.zeros((soupsize[1], soupsize[0]), dtype=np.float32)
+cv2.ellipse(innermask, halfsz, (int(halfsz[0] * innerratio), int(halfsz[1] * innerratio)), 0, 0, 360, 1, -1)  # Fill the ellipse with 1
+temp = (1-((np.arange(soupsize[0]) - halfsz[0])/ halfsz[0])**2 - ((np.arange(soupsize[1])[:, None] - halfsz[1])/ halfsz[1])**2)/(1- innerratio**2)
+
+interp = temp**2*(3-2*temp)
+alphamask = (mask - innermask) * interp + innermask
+alphamask = cv2.merge([alphamask, alphamask, alphamask])
+
+mask = np.zeros((soupsize[1], soupsize[0]), dtype=np.uint8)
+halfsz = (soupsize[0]//2, soupsize[1]//2)
+cv2.ellipse(mask, halfsz, (int(halfsz[0]*0.8), int(halfsz[1]*0.8)), 0, 0, 360, 255, -1)
 
 def load_image_from_buffer(buffer):
     np_data = np.frombuffer(buffer, np.uint8)
@@ -65,28 +77,18 @@ def find_face(img):
     
 def blend_soup(img):
     face = cv2.resize(img, soupsize)
-    mask = np.zeros((soupsize[1], soupsize[0]), dtype=np.uint8)
-    halfsz = (soupsize[0]//2, soupsize[1]//2)
-    cv2.ellipse(mask, halfsz, (int(halfsz[0]*0.8), int(halfsz[1]*0.8)), 0, 0, 360, 255, -1)  # Fill the ellipse with 1
     blended = cv2.seamlessClone(face, soup, mask, (halfsz[0], halfsz[1]), cv2.NORMAL_CLONE)
     result = soup_total.copy()
     result[soupcorner[1]:soupcorner[1]+soupsize[1], soupcorner[0]:soupcorner[0]+soupsize[0]] = blended
     return result
-# innerratio = 0.4
-# innermask = np.zeros((soupsize[1], soupsize[0]), dtype=np.float32)
-# cv2.ellipse(innermask, halfsz, (int(halfsz[0] * innerratio), int(halfsz[1] * innerratio)), 0, 0, 360, 1, -1)  # Fill the ellipse with 1
 
-# temp = (1-((np.arange(soupsize[0]) - halfsz[0])/ halfsz[0])**2 - ((np.arange(soupsize[1])[:, None] - halfsz[1])/ halfsz[1])**2)/(1- innerratio**2)
+def blend_soup2(img):
+    face = cv2.resize(img, soupsize)
 
-# interp = temp**2*(3-2*temp)
-# mask = (mask - innermask) * interp + innermask
+    blended = soup * (1 - alphamask) + face * alphamask
+    blended = blended.astype(np.uint8)
+    
+    result = soup_total.copy()
+    result[soupcorner[1]:soupcorner[1]+soupsize[1], soupcorner[0]:soupcorner[0]+soupsize[0]] = blended
 
-# mask = cv2.merge([mask, mask, mask])
-
-# blended = soup * (1 - mask) + face * mask
-# blended = blended.astype(np.uint8)
-
-# soup_total[soupcorner[1]:soupcorner[1]+soupsize[1], soupcorner[0]:soupcorner[0]+soupsize[0]] = blended
-
-# cv2.imwrite("facesoup1.jpg", soup_total)
-
+    return result

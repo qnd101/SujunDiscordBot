@@ -349,7 +349,7 @@ async def on_message(message : discord.Message):
                 print(recipe)
                 recipe_text = " , ".join(f"{i1+alchemy_manager.get_emoji(i1)} + {i2+alchemy_manager.get_emoji(i2)}" for i1, i2 in recipe)
                 await message.reply(content=f"'지금까지 알려진 {item+alchemy_manager.get_emoji(item)}' 의 조합법: \n{recipe_text}")
-            case "/요리하기":
+            case "/요리하기" | "/요리하기2":
                 if message.author.bot:
                     await message.reply(content="인간도 아닌게 어딜!")
                     return
@@ -363,9 +363,9 @@ async def on_message(message : discord.Message):
                 try:
                     await message.reply(content="요리하는 중... 잠시만 기다려주세요")
                     img = facesoup.load_image_from_buffer(await attachment.read())
-                    img = facesoup.resize_image(img, 1500)
+                    img = facesoup.resize_image(img, 600)
                     img = facesoup.find_face(img)
-                    img = facesoup.blend_soup(img)
+                    img = facesoup.blend_soup(img) if command == "/요리하기" else facesoup.blend_soup2(img)
                     img_bytes = BytesIO(facesoup.encode_array_into_jpg(img))
                     img_bytes.seek(0)
                     image_file = discord.File(fp=img_bytes, filename='facesoup.jpg')
@@ -373,13 +373,17 @@ async def on_message(message : discord.Message):
                     embed = discord.Embed(title="", description="")
                     embed.set_image(url="attachment://facesoup.jpg")  # Important: Use attachment://
                     # Send the embed and the file
-                    await message.reply(content= "맛있는 탕🍲이 완성되었습니다!😋", file=image_file, embed=embed)
+                    await message.reply(content= "맛있는 탕🍲이 완성되었습니다! 😋", file=image_file, embed=embed)
                     return
                 except Exception as e:
                     await message.reply(content=str(e))
                     return
 
             case default:
+
+                if mcsrv != None and message.channel.id == mc_settings["channel-id"] and message.author != bot.user:
+                    mc_manager.extern_chat(mcsrv, message.author.name, message.content)
+
                 cmd_data = next(filter(lambda x: command.startswith(x["cmd"]), gs_commands), None)
                 if cmd_data is None:
                     # global help_msg
@@ -410,7 +414,7 @@ async def on_message(message : discord.Message):
                     await message.reply(file=image_file, embed=embed)
                 finally:
                     return
-                # if no command matched
+
 
 @tasks.loop(seconds=mc_settings["update-period"])
 async def mcsrv_update():
